@@ -8,12 +8,12 @@ A deterministic paper-trading bot for pump.fun bonding curves, built by an AI ag
 
 ## Strategy
 
-Early momentum with fast, rule-based exits — written from scratch for this sprint:
+Seasoned momentum with small stakes and fast, rule-based exits — written from scratch for this sprint:
 
-- **Watch** every new coin from its CreateEvent: bonding-curve price (virtual SOL reserves / virtual token reserves), trade count, and buy share of traded SOL volume.
-- **Enter** only while a coin is young (within 3000 slots of creation) and still rising: at least 6 trades, price up ≥ 10% from the first price seen, still within 5% of its highest price, and buys ≥ 60% of volume. One fixed 0.04 SOL stake per coin (never below the 0.01 SOL round-trip minimum).
-- **Exit** in full on the first of: take-profit +30% over the filled cost basis, stop-loss −15%, a trailing 12% fall from a peak that was +15% or better, or a stale exit after 4000 slots on a flat coin. The replay flattens anything left at the end.
-- **Fee-aware:** protocol + creator fees run about 1.25% per side plus a small per-order tx fee, so a 10% entry move and a 30% take-profit clear the round trip several times over.
+- **Watch** every new coin from its CreateEvent: bonding-curve price (virtual SOL reserves / virtual token reserves), trade count, and buy share of traded SOL volume. Prices are read off each event's own reserves, trade by trade, so the first price is the creation price.
+- **Enter** only coins with a proven early move: at least 20 trades, price up ≥ 5% from the creation price, still within 5% of its highest price, and buys ≥ 75% of traded SOL volume — only coins the crowd is clearly still buying, and only while young (within 1500 slots of creation). One fixed 0.01 SOL stake per coin (the round-trip minimum).
+- **Exit** in full on the first of: take-profit +25% over the filled cost basis, stop-loss −10%, a trailing 5% fall from the best price since entry (once that peak was +5% or better), or a stale exit after 2500 slots on a flat coin. Sells carry wide slippage so they actually fill. The replay flattens anything left at the end.
+- **Fee-aware:** protocol + creator fees run about 1.25% per side plus a small per-order tx fee, so a 25% take-profit clears the round trip several times over.
 
 Everything is integer arithmetic — no clock, no randomness, no network — so two runs on the same data produce the same action log.
 
