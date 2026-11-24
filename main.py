@@ -13,7 +13,10 @@ fast, rule-based exits.
 * Watch every new coin from its CreateEvent. Track its bonding-curve price
   (virtual SOL reserves / virtual token reserves, integer-scaled so the
   comparison is exact) from the first price we see, plus its trade count and
-  how much of its traded SOL volume was buys.
+  how much of its traded SOL volume was buys. Prices are read off each
+  event's own reserves, trade by trade — never off the end-of-batch curve —
+  so the first price is the creation price and a rise is measured as it
+  happens, not after the pump already printed inside one batch.
 * Enter only while the coin is still young and rising: at least 8 trades,
   price up >= 5% from the first price seen, price still within 5% of the
   highest price seen so far (still climbing, not already faded), and buys at
@@ -21,10 +24,10 @@ fast, rule-based exits.
   harness size cap when smaller, but never below the 0.01 SOL round-trip
   minimum), so no single coin can hurt the book much.
 * Exit fast, in full, on the first of: take-profit +50% over the filled cost
-  basis, stop-loss -10%, a trailing fall of 8% from the best price since
+  basis, stop-loss -6%, a trailing fall of 8% from the best price since
   entry (once that peak was +10% or better — this banks the partial runs
   that most coins actually make, instead of waiting for +50% or eating
-  -10%), or a stale exit after 2500 slots on a flat coin. Sells carry
+  -6%), or a stale exit after 2500 slots on a flat coin. Sells carry
   wide slippage so they actually fill — a bad exit beats holding a dying
   coin. The replay flattens anything left at the end.
 * Fee-aware: protocol + creator fees run about 1.25% per side plus a small
@@ -58,7 +61,7 @@ ENTRY_NEAR_PEAK_BPS = 9500          # price within 5% of the highest price seen
 ENTRY_MIN_BUY_SHARE_BPS = 6500      # buys >= 65% of traded SOL volume
 
 TAKE_PROFIT_BPS = 15000             # sell at +50% over filled cost basis: let runners run
-STOP_LOSS_BPS = 9000                # sell at -10% under filled cost basis
+STOP_LOSS_BPS = 9400                # sell at -6% under filled cost basis: cut losers fast
 TRAILING_DROP_BPS = 9200            # sell after an 8% fall from the peak since entry
 TRAILING_ACTIVATE_BPS = 11000       # ... once the peak reached +10%: bank partial runs
                                     # instead of waiting for +50% or eating -10%
@@ -77,13 +80,14 @@ class Coin:
     """Per-mint bookkeeping, kept in first-seen order."""
 
     __slots__ = (
-        "first_price", "peak_price", "trades", "buy_sol", "sell_sol",
+        "first_price", "peak_price", "last_price", "trades", "buy_sol", "sell_sol",
         "created_slot", "decided", "entry_price", "entry_slot", "peak_since_entry",
     )
 
     def __init__(self, first_price, slot):
         self.first_price = first_price
         self.peak_price = first_price
+        self.last_price = first_price
         self.trades = 0
         self.buy_sol = 0
         self.sell_sol = 0
@@ -94,17 +98,31 @@ class Coin:
         self.peak_since_entry = 0
 
 
+def _event_price(e):
+    """Bonding-curve price carried by one event, scaled by SCALE (0 if absent)."""
+    vt = int(e.get("virtual_token_reserves") or 0)
+    vq = int(e.get("virtual_sol_reserves") or 0)
+    if vt <= 0:
+        return 0
+    return vq * SCALE // vt
+
+
 coins = {}  # mint -> Coin, insertion order = first-seen order
 
 
 def _observe(state, batch):
-    """Fold this batch's events into per-coin stats (batch order, deterministic)."""
+    """Fold this batch's events into per-coin stats (batch order, deterministic).
+
+    Prices come from each event's own reserves, not from the end-of-batch
+    curve: a coin's first price must be its CreateEvent price, and its rise
+    must be measured trade by trade, or the entry signal reads a pump that
+    already happened inside the same batch.
+    """
     slot = batch["slot"]
     for e in batch["events"]:
         mint = e["mint"]
         kind = e["event"]
-        curve = state.curves.get(mint)
-        price = price_scaled(curve)
+        price = _event_price(e)
         coin = coins.get(mint)
         if coin is None:
             if price <= 0:
@@ -119,6 +137,7 @@ def _observe(state, batch):
             else:
                 coin.sell_sol += amount
         if price > 0:
+            coin.last_price = price
             if price > coin.peak_price:
                 coin.peak_price = price
             if mint in state.positions and coin.entry_price > 0:
@@ -202,7 +221,7 @@ def on_batch(state, batch):
         if state.slot - coin.created_slot > MAX_AGE_SLOTS_TO_ENTER:
             coin.decided = True
             continue
-        price = price_scaled(curve)
+        price = coin.last_price
         if price <= 0 or coin.first_price <= 0:
             continue
         rise = price * 10_000 // coin.first_price
