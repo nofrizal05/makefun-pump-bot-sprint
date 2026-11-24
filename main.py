@@ -20,10 +20,11 @@ fast, rule-based exits.
   least 65% of traded SOL volume. One fixed stake per coin (0.04 SOL, or the
   harness size cap when smaller, but never below the 0.01 SOL round-trip
   minimum), so no single coin can hurt the book much.
-* Exit fast, in full, on the first of: take-profit +25% over the filled cost
+* Exit fast, in full, on the first of: take-profit +50% over the filled cost
   basis, stop-loss -10%, a trailing fall of 8% from the best price since
-  entry (once that peak was +10% or better), or a stale exit after 2500 slots
-  when the coin never got within 5% of the entry price again. Sells carry
+  entry (once that peak was +10% or better — this banks the partial runs
+  that most coins actually make, instead of waiting for +50% or eating
+  -10%), or a stale exit after 2500 slots on a flat coin. Sells carry
   wide slippage so they actually fill — a bad exit beats holding a dying
   coin. The replay flattens anything left at the end.
 * Fee-aware: protocol + creator fees run about 1.25% per side plus a small
@@ -56,10 +57,11 @@ ENTRY_RISE_BPS = 500                # price up >= 5% from first price seen: ente
 ENTRY_NEAR_PEAK_BPS = 9500          # price within 5% of the highest price seen
 ENTRY_MIN_BUY_SHARE_BPS = 6500      # buys >= 65% of traded SOL volume
 
-TAKE_PROFIT_BPS = 12500             # sell at +25% over filled cost basis
+TAKE_PROFIT_BPS = 15000             # sell at +50% over filled cost basis: let runners run
 STOP_LOSS_BPS = 9000                # sell at -10% under filled cost basis
 TRAILING_DROP_BPS = 9200            # sell after an 8% fall from the peak since entry
-TRAILING_ACTIVATE_BPS = 11000       # ... once the peak reached +10%
+TRAILING_ACTIVATE_BPS = 11000       # ... once the peak reached +10%: bank partial runs
+                                    # instead of waiting for +50% or eating -10%
 STALE_SLOTS = 2500                  # give up on a flat coin after this many slots
 STALE_EXIT_BPS = 10500              # ... unless it is already up >= 5%
 
