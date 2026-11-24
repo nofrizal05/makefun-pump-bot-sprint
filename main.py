@@ -14,16 +14,18 @@ fast, rule-based exits.
   (virtual SOL reserves / virtual token reserves, integer-scaled so the
   comparison is exact) from the first price we see, plus its trade count and
   how much of its traded SOL volume was buys.
-* Enter only while the coin is still young and rising: at least 6 trades,
-  price up >= 10% from the first price seen, price still within 5% of the
+* Enter only while the coin is still young and rising: at least 8 trades,
+  price up >= 5% from the first price seen, price still within 5% of the
   highest price seen so far (still climbing, not already faded), and buys at
-  least 60% of traded SOL volume. One fixed stake per coin (0.04 SOL, or the
+  least 65% of traded SOL volume. One fixed stake per coin (0.04 SOL, or the
   harness size cap when smaller, but never below the 0.01 SOL round-trip
   minimum), so no single coin can hurt the book much.
-* Exit fast, in full, on the first of: take-profit +30% over the filled cost
-  basis, stop-loss -15%, a trailing fall of 12% from the best price since
-  entry, or a stale exit after 4000 slots when the coin never got within 5%
-  of the entry price again. The replay flattens anything left at the end.
+* Exit fast, in full, on the first of: take-profit +25% over the filled cost
+  basis, stop-loss -10%, a trailing fall of 8% from the best price since
+  entry (once that peak was +10% or better), or a stale exit after 2500 slots
+  when the coin never got within 5% of the entry price again. Sells carry
+  wide slippage so they actually fill — a bad exit beats holding a dying
+  coin. The replay flattens anything left at the end.
 * Fee-aware: protocol + creator fees run about 1.25% per side plus a small
   per-order tx fee, so a 10% entry move and a 30% take-profit clear the round
   trip several times over; we never chase a move smaller than the fees.
@@ -45,18 +47,20 @@ SCALE = 10 ** 9  # price is lamports-per-token scaled by this, kept as an int
 
 STAKE_LAMPORTS = 40_000_000          # 0.04 SOL per coin
 MIN_ROUND_TRIP_LAMPORTS = 10_000_000  # 0.01 SOL: the guardrail minimum per round trip
-MAX_SLIPPAGE_BPS = 1000              # 10%: wide enough for fast bonding curves
+MAX_SLIPPAGE_BPS = 1000              # 10% on buys: keep entries from filling far above the signal
+SELL_SLIPPAGE_BPS = 10_000           # exits must fill: a bad exit beats holding a dying coin
 
-MIN_TRADES_TO_ENTER = 6
-MAX_AGE_SLOTS_TO_ENTER = 3000       # only young coins, still in their launch window
-ENTRY_RISE_BPS = 1000               # price up >= 10% from first price seen
+MIN_TRADES_TO_ENTER = 8
+MAX_AGE_SLOTS_TO_ENTER = 1500       # only very young coins, still in their launch window
+ENTRY_RISE_BPS = 500                # price up >= 5% from first price seen: enter the move early
 ENTRY_NEAR_PEAK_BPS = 9500          # price within 5% of the highest price seen
-ENTRY_MIN_BUY_SHARE_BPS = 6000      # buys >= 60% of traded SOL volume
+ENTRY_MIN_BUY_SHARE_BPS = 6500      # buys >= 65% of traded SOL volume
 
-TAKE_PROFIT_BPS = 13000             # sell at +30% over filled cost basis
-STOP_LOSS_BPS = 8500                # sell at -15% under filled cost basis
-TRAILING_DROP_BPS = 8800            # sell after a 12% fall from the peak since entry
-STALE_SLOTS = 4000                  # give up on a flat coin after this many slots
+TAKE_PROFIT_BPS = 12500             # sell at +25% over filled cost basis
+STOP_LOSS_BPS = 9000                # sell at -10% under filled cost basis
+TRAILING_DROP_BPS = 9200            # sell after an 8% fall from the peak since entry
+TRAILING_ACTIVATE_BPS = 11000       # ... once the peak reached +10%
+STALE_SLOTS = 2500                  # give up on a flat coin after this many slots
 STALE_EXIT_BPS = 10500              # ... unless it is already up >= 5%
 
 
@@ -166,15 +170,15 @@ def on_batch(state, batch):
             should_sell = True  # take-profit: bank the +30%
         elif rel <= STOP_LOSS_BPS:
             should_sell = True  # stop-loss: cut the -15%
-        elif peak_rel >= 11500 and rel * 10_000 // peak_rel <= TRAILING_DROP_BPS:
-            should_sell = True  # trailing stop: 12% off a peak that was +15% or better
+        elif peak_rel >= TRAILING_ACTIVATE_BPS and rel * 10_000 // peak_rel <= TRAILING_DROP_BPS:
+            should_sell = True  # trailing stop: 8% off a peak that was +10% or better
         elif state.slot - coin.entry_slot >= STALE_SLOTS and rel < STALE_EXIT_BPS:
             should_sell = True  # stale: flat for too long, redeploy the cash
         if should_sell:
             orders.append({
                 "side": "sell", "mint": mint,
                 "token_amount": holding.token_amount,
-                "max_slippage_bps": MAX_SLIPPAGE_BPS,
+                "max_slippage_bps": SELL_SLIPPAGE_BPS,
             })
             free -= tx
 
