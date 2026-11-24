@@ -7,29 +7,31 @@ CompleteEvent), fills for our earlier orders, marks with the latest reserves,
 and the account (cash + positions). We answer each batch with exactly one
 reply echoing its seq, carrying our orders for that slot.
 
-Strategy (written from scratch for this competition): early momentum with
-fast, rule-based exits.
+Strategy (written from scratch for this competition): snipe the launch,
+then let runners run with fast, rule-based exits.
 
 * Watch every new coin from its CreateEvent. Track its bonding-curve price
   (virtual SOL reserves / virtual token reserves, integer-scaled so the
-  comparison is exact) from the first price we see, plus its trade count and
+  comparison is exact) from the creation price, plus its trade count and
   how much of its traded SOL volume was buys. Prices are read off each
   event's own reserves, trade by trade — never off the end-of-batch curve —
   so the first price is the creation price and a rise is measured as it
   happens, not after the pump already printed inside one batch.
-* Enter only while the coin is still young and rising: at least 8 trades,
-  price up >= 5% from the first price seen, price still within 5% of the
-  highest price seen so far (still climbing, not already faded), and buys at
-  least 65% of traded SOL volume. One fixed stake per coin (0.04 SOL, or the
-  harness size cap when smaller, but never below the 0.01 SOL round-trip
-  minimum), so no single coin can hurt the book much.
-* Exit fast, in full, on the first of: take-profit +50% over the filled cost
-  basis, stop-loss -6%, a trailing fall of 8% from the best price since
-  entry (once that peak was +10% or better — this banks the partial runs
-  that most coins actually make, instead of waiting for +50% or eating
-  -6%), or a stale exit after 2500 slots on a flat coin. Sells carry
-  wide slippage so they actually fill — a bad exit beats holding a dying
-  coin. The replay flattens anything left at the end.
+* Enter only while the coin is brand new (within 600 slots of creation):
+  at least 5 trades, price up >= 2% from the creation price, price still
+  within 5% of the highest price seen so far, and buys at least 65% of
+  traded SOL volume. Buying near the creation price is the whole edge:
+  the early buyers capture the launch pump instead of chasing it. One
+  fixed stake per coin (0.04 SOL, or the harness size cap when smaller,
+  but never below the 0.01 SOL round-trip minimum), so no single coin can
+  hurt the book much.
+* Exit fast, in full, on the first of: take-profit +150% over the filled
+  cost basis, stop-loss -8%, a trailing fall of 8% from the best price
+  since entry (once that peak was +10% or better — this banks the partial
+  runs that most coins actually make), or a stale exit after 2500 slots
+  on a flat coin. Sells carry wide slippage so they actually fill — a bad
+  exit beats holding a dying coin. The replay flattens anything left at
+  the end.
 * Fee-aware: protocol + creator fees run about 1.25% per side plus a small
   per-order tx fee, so a 10% entry move and a 30% take-profit clear the round
   trip several times over; we never chase a move smaller than the fees.
@@ -54,14 +56,15 @@ MIN_ROUND_TRIP_LAMPORTS = 10_000_000  # 0.01 SOL: the guardrail minimum per roun
 MAX_SLIPPAGE_BPS = 1000              # 10% on buys: keep entries from filling far above the signal
 SELL_SLIPPAGE_BPS = 10_000           # exits must fill: a bad exit beats holding a dying coin
 
-MIN_TRADES_TO_ENTER = 8
-MAX_AGE_SLOTS_TO_ENTER = 1500       # only very young coins, still in their launch window
-ENTRY_RISE_BPS = 500                # price up >= 5% from first price seen: enter the move early
+MIN_TRADES_TO_ENTER = 5
+MAX_AGE_SLOTS_TO_ENTER = 600        # only brand-new coins: snipe the launch, do not chase
+ENTRY_RISE_BPS = 200                # price up >= 2% from the creation price: confirm
+                                    # some buy interest, then get in before the pump
 ENTRY_NEAR_PEAK_BPS = 9500          # price within 5% of the highest price seen
 ENTRY_MIN_BUY_SHARE_BPS = 6500      # buys >= 65% of traded SOL volume
 
-TAKE_PROFIT_BPS = 15000             # sell at +50% over filled cost basis: let runners run
-STOP_LOSS_BPS = 9400                # sell at -6% under filled cost basis: cut losers fast
+TAKE_PROFIT_BPS = 25000             # sell at +150% over filled cost basis: let runners run
+STOP_LOSS_BPS = 9200                # sell at -8% under filled cost basis: cut losers fast
 TRAILING_DROP_BPS = 9200            # sell after an 8% fall from the peak since entry
 TRAILING_ACTIVATE_BPS = 11000       # ... once the peak reached +10%: bank partial runs
                                     # instead of waiting for +50% or eating -10%
